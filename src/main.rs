@@ -10,6 +10,7 @@ use crossterm::{ExecutableCommand,
                 style::{self, Stylize, Color, PrintStyledContent, Attribute, Print, SetAttribute, SetAttributes, SetBackgroundColor, SetForegroundColor},
                 event::{read, poll, Event},
                 Result};
+use crossterm::event::KeyCode;
 use crossterm::style::Attributes;
 use crate::Mode::Setup;
 
@@ -24,15 +25,111 @@ enum Mode {
     Automatic(u16)
 }
 
-struct CpuState {
+struct EmulatorState {
     rom: [u32; 64],
     ram: [u16; 32],
     reg: [u16; 8],
     inp: [u16; 8],
     out: [u16; 8],
     flg: [bool; 16],
-    pc: u16
+    pc: u16,
+
+    mode: Mode,
+    log_buffer: [String; 7],
+
+    current_rom_read: Option<u16>,
+    current_ram_read: Option<u16>,
+    current_ram_write: Option<u16>,
+    current_reg_read_a: Option<u16>,
+    current_reg_read_b: Option<u16>,
+    current_reg_write: Option<u16>,
+    current_input_read_b: Option<u16>,
+    current_output_write_b: Option<u16>,
+    current_flg_write: Option<()>
 }
+
+impl EmulatorState {
+    fn reset(&mut self) {
+        self.rom = [0; 64];
+        self.ram = [0; 32];
+        self.reg = [0; 8];
+        self.inp = [0; 8];
+        self.out = [0; 8];
+        self.flg = [false; 16];
+        self.pc = 0;
+
+        self.mode = Setup;
+        self.log_buffer = Default::default();
+
+        self.reset_last_mods();
+    }
+
+    fn reset_last_mods(&mut self) {
+        self.current_rom_read = None;
+        self.current_ram_read = None;
+        self.current_ram_write = None;
+        self.current_reg_read_a = None;
+        self.current_reg_read_b = None;
+        self.current_reg_write = None;
+        self.current_input_read_b = None;
+        self.current_output_write_b = None;
+        self.current_flg_write = None;
+    }
+
+    fn write_to_rom(&mut self, idx: u16, val: u32) -> Result<()> {
+        let mut stdout = stdout();
+
+        self.rom[idx as usize] = val % 65536;
+        let value = val % 65536;
+        let hex = &format!("{value:x}");
+        stdout.queue(MoveTo((5 * (idx % 8) + 6) as u16, (idx / 8 + 3) as u16))?;
+        stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 4).white()))?;
+
+        Ok(())
+    }
+
+    fn write_to_ram(&mut self, idx: u16, val: u16) -> Result<()> {
+        let mut stdout = stdout();
+
+        if let Some(i) = self.current_ram_write {
+            let value = self.ram[i as usize] % 256;
+            let hex = &format!("{value:x}");
+            stdout.queue(MoveTo((3 * (i % 4) + 52) as u16, (i / 4 + 3) as u16))?;
+            stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
+        }
+
+        self.ram[idx as usize] = val % 256;
+        let value = val % 256;
+        let hex = &format!("{value:x}");
+        stdout.queue(MoveTo((3 * (idx % 4) + 52) as u16, (idx / 4 + 3) as u16))?;
+        stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).green()))?;
+
+        self.current_ram_write = Some(idx);
+
+        Ok(())
+    }
+
+    fn write_to_regs(&mut self, idx: u16, val: u16) -> Result<()> {
+        let mut stdout = stdout();
+
+        if let Some(i) = self.current_reg_write {
+            self.reg[idx as usize] = val % 256;
+            stdout.queue(MoveTo(6, 13 + i))?;
+            let hex = &format!("{val:x}");
+            stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
+        }
+
+        self.reg[idx as usize] = val % 256;
+        stdout.queue(MoveTo(6, 13 + idx))?;
+        let hex = &format!("{val:x}");
+        stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).green()))?;
+
+        self.current_reg_write = Some(idx);
+
+        Ok(())
+    }
+}
+
 
 fn draw_box((x_pos, y_pos): (u16, u16), (x_size, y_size): (u16, u16), title: String) -> Result<()> {
     let mut stdout = stdout();
@@ -63,7 +160,7 @@ fn draw_box((x_pos, y_pos): (u16, u16), (x_size, y_size): (u16, u16), title: Str
     Ok(())
 }
 
-fn draw_layout(cpu_state: &CpuState, mode: &Mode) -> Result<()> {
+fn draw_layout(emulator: &mut EmulatorState) -> Result<()> {
     let mut stdout = stdout();
 
     stdout.queue(SetBackgroundColor(BG_COLOR))?;
@@ -99,11 +196,8 @@ fn draw_layout(cpu_state: &CpuState, mode: &Mode) -> Result<()> {
         let bin = format!("{i:b}");
         stdout.queue(PrintStyledContent(format!("{bin:0>0$}", 3).cyan()))?;
     }
-    for (idx, cell) in cpu_state.rom.iter().enumerate() {
-        let value = cell % 65536;
-        let hex = &format!("{value:x}");
-        stdout.queue(MoveTo((5 * (idx % 8) + 6) as u16, (idx / 8 + 3) as u16))?;
-        stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 4).white()))?;
+    for idx in 0..64 {
+        emulator.write_to_rom(idx, 0)?;
     }
 
     draw_box((46, 1), (29, 11), "".to_string())?;
@@ -121,11 +215,8 @@ fn draw_layout(cpu_state: &CpuState, mode: &Mode) -> Result<()> {
         let bin = format!("{i:b}");
         stdout.queue(PrintStyledContent(format!("{bin:0>0$}", 3).cyan()))?;
     }
-    for (idx, cell) in cpu_state.ram.iter().enumerate() {
-        let value = cell % 256;
-        let hex = &format!("{value:x}");
-        stdout.queue(MoveTo((3 * (idx % 4) + 52) as u16, (idx / 4 + 3) as u16))?;
-        stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
+    for idx in 0..32 {
+        emulator.write_to_ram(idx, 0)?;
     }
 
     draw_box((0, 11), (10, 11), "".to_string())?;
@@ -138,12 +229,11 @@ fn draw_layout(cpu_state: &CpuState, mode: &Mode) -> Result<()> {
     stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
     for i in 0..8 {
         stdout.queue(MoveTo(2, 13 + i))?;
-
         let bin = format!("{i:b}");
         stdout.queue(PrintStyledContent(format!("{bin:0>0$} ", 3).cyan()))?;
-        let value = cpu_state.reg[i as usize];
-        let hex = &format!("{value:x}");
-        stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
+    }
+    for idx in 0..8 {
+        emulator.write_to_regs(idx, 0)?;
     }
 
     draw_box((9, 11), (10, 11), "".to_string())?;
@@ -159,7 +249,7 @@ fn draw_layout(cpu_state: &CpuState, mode: &Mode) -> Result<()> {
 
         let bin = format!("{i:b}");
         stdout.queue(PrintStyledContent(format!("{bin:0>0$} ", 3).cyan()))?;
-        let value = cpu_state.inp[i as usize];
+        let value = emulator.inp[i as usize];
         let hex = &format!("{value:x}");
         stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
     }
@@ -177,7 +267,7 @@ fn draw_layout(cpu_state: &CpuState, mode: &Mode) -> Result<()> {
 
         let bin = format!("{i:b}");
         stdout.queue(PrintStyledContent(format!("{bin:0>0$} ", 3).cyan()))?;
-        let value = cpu_state.out[i as usize];
+        let value = emulator.out[i as usize];
         let hex = &format!("{value:x}");
         stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
     }
@@ -224,7 +314,7 @@ fn draw_layout(cpu_state: &CpuState, mode: &Mode) -> Result<()> {
     for i in 0..16 {
         stdout.queue(MoveTo((i / 8) as u16 * 5 + 32, i % 8 + 13))?;
 
-        let value = match cpu_state.flg[i as usize] {
+        let value = match emulator.flg[i as usize] {
             true => 'T',
             false => 'F'
         };
@@ -238,11 +328,11 @@ fn draw_layout(cpu_state: &CpuState, mode: &Mode) -> Result<()> {
     stdout.queue(MoveTo(41, 12))?;
     stdout.queue(PrintStyledContent("PC".magenta()))?;
     stdout.execute(SetAttribute(Attribute::Reset))?;
-    let pc = cpu_state.pc % 64;
+    let pc = emulator.pc % 64;
     let bin = format!("{pc:b}");
     stdout.queue(PrintStyledContent(format!(" {bin:0>0$} ", 6).white()))?;
     stdout.queue(PrintStyledContent("MODE: ".cyan()))?;
-    match mode {
+    match emulator.mode {
         Setup => stdout.queue(PrintStyledContent("HALTED".red()))?,
         Mode::ManualStep => stdout.queue(PrintStyledContent("MANUAL".yellow()))?,
         Mode::Automatic(speed) => stdout.queue(PrintStyledContent(format!("{}", speed).green()))?
@@ -302,33 +392,72 @@ fn main() -> Result<()> {
     let mut stdout = stdout();
     enable_raw_mode()?;
 
-    let delay = Duration::from_millis(100);
+    let mut delay = Duration::from_millis(1000);
 
-    let mut mode: Mode = Setup;
-    let mut cpu_state: CpuState = CpuState {
+    let mut emulator: EmulatorState = EmulatorState {
         rom: [0; 64],
         ram: [0; 32],
         reg: [0; 8],
         inp: [0; 8],
         out: [0; 8],
         flg: [false; 16],
-        pc: 0
+        pc: 0,
+
+        mode: Setup,
+        log_buffer: Default::default(),
+
+        current_rom_read: None,
+        current_ram_read: None,
+        current_ram_write: None,
+        current_reg_read_a: None,
+        current_reg_read_b: None,
+        current_reg_write: None,
+        current_input_read_b: None,
+        current_output_write_b: None,
+        current_flg_write: None
     };
 
     loop {
         if terminal::size()? != WINDOW_SIZE {
             stdout.queue(SetSize(WINDOW_SIZE.0, WINDOW_SIZE.1))?;
         }
+
+        match &emulator.mode {
+            Setup => {
+                stdout.queue(MoveTo(2, 22))?;
+                stdout.queue(PrintStyledContent("L".cyan()))?;
+                stdout.queue(PrintStyledContent(" - load program ".white()))?;
+                stdout.queue(PrintStyledContent("C".cyan()))?;
+                stdout.queue(PrintStyledContent(" - clear ".white()))?;
+                stdout.queue(PrintStyledContent("R".cyan()))?;
+                stdout.queue(PrintStyledContent(" - run ".white()))?;
+                stdout.queue(PrintStyledContent("S".cyan()))?;
+                stdout.queue(PrintStyledContent(" - step ".white()))?;
+            }
+            ManualStep => {
+
+            }
+            Automatic => {
+
+            }
+        }
+
         if poll(Duration::from_millis(0))? {
             if let Event::Key(key) = read()? {
-                match &mode {
-                    Setup => {
+                match key.code {
+                    KeyCode::Char('L') => {
 
                     }
-                    ManualStep => {
+                    KeyCode::Char('C') => {
 
                     }
-                    Automatic => {
+                    KeyCode::Char('R') => {
+
+                    }
+                    KeyCode::Char('S') => {
+
+                    }
+                    _ => {
 
                     }
                 }
@@ -336,7 +465,7 @@ fn main() -> Result<()> {
             else {
                 stdout.queue(terminal::Clear(terminal::ClearType::Purge))?;
                 stdout.queue(cursor::Hide)?;
-                draw_layout(&cpu_state, &mode)?;
+                draw_layout(&mut emulator)?;
                 stdout.flush()?;
             }
             while poll(Duration::from_millis(1))? {
