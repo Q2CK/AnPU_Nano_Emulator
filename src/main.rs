@@ -1,7 +1,5 @@
-use std::{env,
-          thread::sleep,
-          time::{self, Duration},
-          io::{stdout, Write}};
+use std::{env, thread::sleep, time::{self, Duration}, io::{stdout, Write}, fs};
+use std::path::Path;
 
 use crossterm::{ExecutableCommand,
                 QueueableCommand,
@@ -58,6 +56,7 @@ impl EmulatorState {
         self.inp = [0; 8];
         self.out = [0; 8];
         self.flg = [false; 16];
+        self.flg[15] = true;
         self.pc = 0;
 
         self.mode = Setup;
@@ -101,6 +100,37 @@ impl EmulatorState {
         self.current_reg_write = None;
     }
 
+    fn draw_log(&mut self) -> Result<()> {
+        let mut stdout = stdout();
+
+        for i in 0..6 {
+            stdout.queue(MoveTo(41, 14 + i))?;
+            if self.log_buffer[i as usize].len() < 22 {
+                stdout.queue(PrintStyledContent(self.log_buffer[i as usize].clone().white()))?;
+            } else {
+                stdout.queue(PrintStyledContent(self.log_buffer[i as usize].clone()[..22].white()))?;
+            }
+        }
+        stdout.queue(MoveTo(41, 20))?;
+        if self.log_buffer[6].len() < 22 {
+            stdout.queue(PrintStyledContent(self.log_buffer[6].clone().green()))?;
+        } else {
+            stdout.queue(PrintStyledContent(self.log_buffer[6].clone()[..22].green()))?;
+        }
+
+        Ok(())
+    }
+
+    fn push_log(&mut self, new_entry: String) -> Result<()> {
+        for i in 1..7 {
+            self.log_buffer[i - 1] = self.log_buffer[i].clone();
+        }
+        self.log_buffer[6] = format!("{: <22}", new_entry);
+
+        self.draw_log()?;
+        Ok(())
+    }
+
     fn draw_contents(&mut self) -> Result<()> {
         let mut stdout = stdout();
 
@@ -131,10 +161,10 @@ impl EmulatorState {
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
         }
         for idx in 0..16 {
-            stdout.queue(MoveTo((idx / 8) as u16 * 5 + 32, idx % 8 + 13))?;
+            stdout.queue(MoveTo(match idx { 0..=7 => 0, _ => 5 } + 32, idx % 8 + 13))?;
             let value = match self.flg[idx as usize] {
-                true => 'T',
-                false => 'F'
+                true => "T",
+                false => "F"
             };
             stdout.queue(PrintStyledContent(value.white()))?;
         }
@@ -164,6 +194,8 @@ impl EmulatorState {
         }
 
         self.draw_pc()?;
+
+        self.draw_log()?;
 
         Ok(())
     }
@@ -532,6 +564,7 @@ impl EmulatorState {
         match opcode {
             "0000" => {
                 self.pc += 1;
+                self.push_log("int".to_string())?;
             }
             "0001" => {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -541,6 +574,8 @@ impl EmulatorState {
                 self.write_to_regs(dest % 8, (self.reg[src_a % 8] + self.reg[src_b % 8]) % 256)?;
 
                 self.pc += 1;
+
+                self.push_log(format!("add {}, {}, {}", dest % 8, src_a % 8, src_b % 8))?;
             }
             "0010" => {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -550,6 +585,8 @@ impl EmulatorState {
                 self.write_to_regs(dest % 8, (self.reg[src_a % 8] - self.reg[src_b % 8]) % 256)?;
 
                 self.pc += 1;
+
+                self.push_log(format!("sub {}, {}, {}", dest % 8, src_a % 8, src_b % 8))?;
             }
             "0011" => {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -559,6 +596,8 @@ impl EmulatorState {
                 self.write_to_regs(dest % 8, (self.reg[src_a % 8] & self.reg[src_b % 8]) % 256)?;
 
                 self.pc += 1;
+
+                self.push_log(format!("and {}, {}, {}", dest % 8, src_a % 8, src_b % 8))?;
             }
             "0100" => {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -568,6 +607,8 @@ impl EmulatorState {
                 self.write_to_regs(dest % 8,!(self.reg[src_a % 8] | self.reg[src_b % 8]) % 256)?;
 
                 self.pc += 1;
+
+                self.push_log(format!("nor {}, {}, {}", dest % 8, src_a % 8, src_b % 8))?;
             }
             "0101" => {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -577,6 +618,8 @@ impl EmulatorState {
                 self.write_to_regs(dest % 8, (self.reg[src_a % 8] ^ self.reg[src_b % 8]) % 256)?;
 
                 self.pc += 1;
+
+                self.push_log(format!("xor {}, {}, {}", dest % 8, src_a % 8, src_b % 8))?;
             }
             "0110" => {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -585,6 +628,8 @@ impl EmulatorState {
                 self.write_to_regs(dest % 8, (self.reg[src_a % 8] / 2) % 256)?;
 
                 self.pc += 1;
+
+                self.push_log(format!("rsh {}, {}", dest % 8, src_a % 8))?;
             }
             "0111" => {
                 let src_a = usize::from_str_radix(&instruction[8..12], 2).unwrap();
@@ -593,18 +638,18 @@ impl EmulatorState {
                 let a = self.reg[src_a % 8] % 256;
                 let b = self.reg[src_b % 8] % 256;
 
-                self.flg[8..16].copy_from_slice(&[
-                    a > b,
-                    a <= b,
-                    a < b,
-                    a >= b,
-                    a == b,
-                    a != b,
-                    false,
-                    true
-                ]);
+                self.flg[8] = a > b;
+                self.flg[9] = a <= b;
+                self.flg[10] = a < b;
+                self.flg[11] = a >= b;
+                self.flg[12] = a == b;
+                self.flg[13] = a != b;
+                self.flg[14] = false;
+                self.flg[15] = true;
 
                 self.pc += 1;
+
+                self.push_log(format!("cmp {}, {}", src_a % 8, src_b % 8))?;
             }
             "1000" => {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -613,6 +658,8 @@ impl EmulatorState {
                 self.write_to_regs(dest % 8, imm % 256)?;
 
                 self.pc += 1;
+
+                self.push_log(format!("imm {}, {}", dest % 8, imm % 256))?;
             }
             "1001" => {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -621,6 +668,8 @@ impl EmulatorState {
                 self.write_to_regs(dest % 8, self.ram[addr % 32])?;
 
                 self.pc += 1;
+
+                self.push_log(format!("dml {}, {}", dest % 8, addr % 32))?;
             }
             "1010" => {
                 let src = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -629,22 +678,28 @@ impl EmulatorState {
                 self.write_to_ram(addr % 32, self.reg[(src % 8) as usize])?;
 
                 self.pc += 1;
+
+                self.push_log(format!("dms {}, {}", src % 8, addr % 32))?;
             }
             "1011" => {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
-                let ptr = usize::from_str_radix(&instruction[8..16], 2).unwrap();
+                let ptr = usize::from_str_radix(&instruction[8..12], 2).unwrap();
 
                 self.write_to_regs(dest, self.ram[(self.reg[(ptr % 8) as usize] % 32) as usize])?;
 
                 self.pc += 1;
+
+                self.push_log(format!("iml {}, {}", dest % 8, ptr % 8))?;
             }
             "1100" => {
-                let src = u16::from_str_radix(&instruction[4..8], 2).unwrap();
-                let ptr = u16::from_str_radix(&instruction[8..16], 2).unwrap();
+                let src = u16::from_str_radix(&instruction[12..16], 2).unwrap();
+                let ptr = u16::from_str_radix(&instruction[8..12], 2).unwrap();
 
                 self.write_to_ram(self.reg[(ptr % 8) as usize] % 32, self.reg[(src % 8) as usize])?;
 
                 self.pc += 1;
+
+                self.push_log(format!("ims {}, {}", ptr % 8, src % 8))?;
             }
             "1101" => {
                 let cond = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -655,6 +710,8 @@ impl EmulatorState {
                 } else {
                     self.pc += 1;
                 }
+
+                self.push_log(format!("brc {}, {}", cond % 16, addr % 64))?;
             }
             "1110" => {
                 let cond = u16::from_str_radix(&instruction[4..8], 2).unwrap();
@@ -665,14 +722,70 @@ impl EmulatorState {
                 } else {
                     self.pc += 1;
                 }
+
+                self.push_log(format!("ibr {}, 0, {}", cond % 16, ptr % 8))?;
             }
             "1111" => {
                 let addr = u16::from_str_radix(&instruction[4..16], 2).unwrap();
 
-                self.pc = addr % 64
+                self.pc = addr % 64;
+
+                self.push_log(format!("jmp {}", addr % 64))?;
             }
             _ => {
                 self.pc += 1;
+
+                self.push_log(format!("unknown opcode"))?;
+            }
+        }
+        self.draw_contents()?;
+
+        Ok(())
+    }
+
+    fn load_from_file(&mut self) -> Result<()> {
+        match fs::read_to_string(Path::new("rom.bin")) {
+            Ok(v) => {
+                let lines: Vec<String> = v.split('\n').map(|x| x.trim().to_string()).collect();
+                for (idx, line) in lines.iter().enumerate() {
+                    if line.len() == 16 {
+                        match u32::from_str_radix(&line, 2) {
+                            Ok(p) => {
+                                self.write_to_rom(idx as u16, p)?;
+                            }
+                            Err(_) => {
+                                self.push_log(format!("Rom init. corrupted"))?;
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                self.push_log(format!("Loaded 'rom.bin'"))?;
+            }
+            Err(_) => {
+                self.push_log(format!("Program not found"))?;
+            }
+        }
+        match fs::read_to_string(Path::new("ram.bin")) {
+            Ok(v) => {
+                let lines: Vec<String> = v.split('\n').map(|x| x.trim().to_string()).collect();
+                for (idx, line) in lines.iter().enumerate() {
+                    if line.len() == 8 {
+                        match u16::from_str_radix(&line, 2) {
+                            Ok(p) => {
+                                self.write_to_ram(idx as u16, p)?;
+                            }
+                            Err(_) => {
+                                self.push_log(format!("Ram init. corrupted"))?;
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                self.push_log(format!("Loaded 'ram.bin'"))?;
+            }
+            Err(_) => {
+
             }
         }
 
@@ -721,7 +834,8 @@ fn main() -> Result<()> {
         reg: [0; 8],
         inp: [0; 8],
         out: [0; 8],
-        flg: [false; 16],
+        flg: [false, false, false, false, false, false, false, false,
+              false, false, false, false, false, false, false, true],
         pc: 0,
 
         mode: Setup,
@@ -733,12 +847,6 @@ fn main() -> Result<()> {
     };
 
     emulator.program_reset()?;
-
-    emulator.rom[0] = 0b1000000000000000;
-    emulator.rom[1] = 0b1000000100000001;
-    emulator.rom[2] = 0b0001000000010000;
-    emulator.rom[3] = 0b0001000100010000;
-    emulator.rom[4] = 0b1111000000000010;
 
     emulator.draw_layout()?;
     emulator.draw_contents()?;
@@ -754,7 +862,7 @@ fn main() -> Result<()> {
                     Setup => {
                         match (key.code, key.kind) {
                             (KeyCode::Char('l'), KeyEventKind::Press) => {
-
+                                emulator.load_from_file()?;
                             }
                             (KeyCode::Char('c'), KeyEventKind::Press) => {
                                 emulator.full_reset()?;
@@ -816,4 +924,3 @@ fn main() -> Result<()> {
         }
     }
 }
-
