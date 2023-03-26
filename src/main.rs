@@ -101,7 +101,7 @@ impl EmulatorState {
         self.current_reg_write = None;
     }
 
-    fn draw_contents(&self) -> Result<()> {
+    fn draw_contents(&mut self) -> Result<()> {
         let mut stdout = stdout();
 
         for idx in 0..64 {
@@ -162,6 +162,8 @@ impl EmulatorState {
             stdout.queue(MoveTo(6, 13 + i))?;
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).green()))?;
         }
+
+        self.draw_pc()?;
 
         Ok(())
     }
@@ -241,6 +243,24 @@ impl EmulatorState {
         stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).green()))?;
 
         self.current_reg_write = Some(idx);
+
+        Ok(())
+    }
+
+    fn draw_pc(&mut self) -> Result<()> {
+        let mut stdout = stdout();
+
+        stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
+        stdout.execute(SetAttribute(Attribute::Bold))?;
+        stdout.execute(SetAttribute(Attribute::Underlined))?;
+        stdout.queue(MoveTo(41, 12))?;
+        stdout.queue(PrintStyledContent("PC".magenta()))?;
+        stdout.execute(SetAttribute(Attribute::Reset))?;
+        let pc = self.pc % 64;
+        let bin = format!("{pc:b}");
+        stdout.queue(PrintStyledContent(format!(" {bin:0>0$} ", 6).white()))?;
+        stdout.queue(PrintStyledContent("MODE: ".cyan()))?;
+        self.draw_mode()?;
 
         Ok(())
     }
@@ -449,17 +469,6 @@ impl EmulatorState {
         stdout.queue(PrintStyledContent("TR".cyan()))?;
 
         draw_box((39, 11), (26, 3), "".to_string())?;
-        stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
-        stdout.execute(SetAttribute(Attribute::Bold))?;
-        stdout.execute(SetAttribute(Attribute::Underlined))?;
-        stdout.queue(MoveTo(41, 12))?;
-        stdout.queue(PrintStyledContent("PC".magenta()))?;
-        stdout.execute(SetAttribute(Attribute::Reset))?;
-        let pc = self.pc % 64;
-        let bin = format!("{pc:b}");
-        stdout.queue(PrintStyledContent(format!(" {bin:0>0$} ", 6).white()))?;
-        stdout.queue(PrintStyledContent("MODE: ".cyan()))?;
-        self.draw_mode()?;
 
         draw_box((39, 13), (26, 9), "".to_string())?;
 
@@ -514,6 +523,7 @@ impl EmulatorState {
     }
 
     fn cycle(&mut self) -> Result<()> {
+        self.draw_pc()?;
         let temp = self.read_from_rom(self.pc);
         let bin = format!("{temp:b}");
         let instruction = format!("{bin:0>0$}", 16);
@@ -722,7 +732,7 @@ fn main() -> Result<()> {
         current_reg_write: None,
     };
 
-    emulator.program_reset();
+    emulator.program_reset()?;
 
     emulator.rom[0] = 0b1000000000000000;
     emulator.rom[1] = 0b1000000100000001;
