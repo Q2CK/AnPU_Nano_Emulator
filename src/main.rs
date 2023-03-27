@@ -37,6 +37,8 @@ struct EmulatorState {
     mode: Mode,
     log_buffer: [String; 7],
 
+    executed_instructions: usize,
+
     current_rom_read: Option<u16>,
     current_ram_write: Option<u16>,
     current_reg_write: Option<u16>,
@@ -61,6 +63,9 @@ impl EmulatorState {
 
         self.mode = Setup;
         self.log_buffer = Default::default();
+
+        self.push_log(format!("Ex. instr: {}", self.executed_instructions))?;
+        self.executed_instructions = 0;
 
         self.reset_last_mods();
         self.draw_contents()?;
@@ -283,11 +288,11 @@ impl EmulatorState {
         let mut stdout = stdout();
 
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
-        stdout.execute(SetAttribute(Attribute::Bold))?;
-        stdout.execute(SetAttribute(Attribute::Underlined))?;
+        stdout.queue(SetAttribute(Attribute::Bold))?;
+        stdout.queue(SetAttribute(Attribute::Underlined))?;
         stdout.queue(MoveTo(41, 12))?;
         stdout.queue(PrintStyledContent("PC".magenta()))?;
-        stdout.execute(SetAttribute(Attribute::Reset))?;
+        stdout.queue(SetAttribute(Attribute::Reset))?;
         let pc = self.pc % 64;
         let bin = format!("{pc:b}");
         stdout.queue(PrintStyledContent(format!(" {bin:0>0$} ", 6).white()))?;
@@ -304,7 +309,7 @@ impl EmulatorState {
         match self.mode {
             Setup => stdout.queue(PrintStyledContent("HALTED".red()))?,
             ManualStep => stdout.queue(PrintStyledContent("MANUAL".yellow()))?,
-            Automatic(speed) => stdout.queue(PrintStyledContent(format!("{speed:->0$}", 6).green()))?
+            Automatic(speed) => stdout.queue(PrintStyledContent("SWOOSH".green()))?// stdout.queue(PrintStyledContent(format!("{speed:->0$}", 6).green()))?
         };
 
         Ok(())
@@ -377,21 +382,21 @@ impl EmulatorState {
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white())).unwrap();
         }
 
-        stdout.execute(MoveTo(0, 0))?;
-        stdout.execute(SetBackgroundColor(Color::Magenta))?;
-        stdout.execute(SetAttribute(Attribute::Bold))?;
-        stdout.execute(SetAttribute(Attribute::Underlined))?;
-        stdout.execute(PrintStyledContent(" AnPU Nano emulator                                         Q2CK ".white()))?;
-        stdout.execute(SetAttribute(Attribute::Reset))?;
+        stdout.queue(MoveTo(0, 0))?;
+        stdout.queue(SetBackgroundColor(Color::Magenta))?;
+        stdout.queue(SetAttribute(Attribute::Bold))?;
+        stdout.queue(SetAttribute(Attribute::Underlined))?;
+        stdout.queue(PrintStyledContent(" AnPU Nano emulator                                         Q2CK ".white()))?;
+        stdout.queue(SetAttribute(Attribute::Reset))?;
 
 
         draw_box((0, 1), (47, 11), "".to_string())?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
-        stdout.execute(SetAttribute(Attribute::Bold))?;
-        stdout.execute(SetAttribute(Attribute::Underlined))?;
+        stdout.queue(SetAttribute(Attribute::Bold))?;
+        stdout.queue(SetAttribute(Attribute::Underlined))?;
         stdout.queue(MoveTo(2, 2))?;
         stdout.queue(PrintStyledContent("ROM".magenta()))?;
-        stdout.execute(SetAttribute(Attribute::Reset))?;
+        stdout.queue(SetAttribute(Attribute::Reset))?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
         stdout.queue(MoveTo(6, 2))?;
         stdout.queue(PrintStyledContent(" 000  001  010  011  100  101  110  111".cyan()))?;
@@ -404,11 +409,11 @@ impl EmulatorState {
 
         draw_box((46, 1), (29, 11), "".to_string())?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
-        stdout.execute(SetAttribute(Attribute::Bold))?;
-        stdout.execute(SetAttribute(Attribute::Underlined))?;
+        stdout.queue(SetAttribute(Attribute::Bold))?;
+        stdout.queue(SetAttribute(Attribute::Underlined))?;
         stdout.queue(MoveTo(48, 2))?;
         stdout.queue(PrintStyledContent("RAM".magenta()))?;
-        stdout.execute(SetAttribute(Attribute::Reset))?;
+        stdout.queue(SetAttribute(Attribute::Reset))?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
         stdout.queue(MoveTo(52, 2))?;
         stdout.queue(PrintStyledContent("00 01 10 11".cyan()))?;
@@ -420,11 +425,11 @@ impl EmulatorState {
 
         draw_box((0, 11), (10, 11), "".to_string())?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
-        stdout.execute(SetAttribute(Attribute::Bold))?;
-        stdout.execute(SetAttribute(Attribute::Underlined))?;
+        stdout.queue(SetAttribute(Attribute::Bold))?;
+        stdout.queue(SetAttribute(Attribute::Underlined))?;
         stdout.queue(MoveTo(2, 12))?;
         stdout.queue(PrintStyledContent("REG".magenta()))?;
-        stdout.execute(SetAttribute(Attribute::Reset))?;
+        stdout.queue(SetAttribute(Attribute::Reset))?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
         for i in 0..8 {
             stdout.queue(MoveTo(2, 13 + i))?;
@@ -434,11 +439,11 @@ impl EmulatorState {
 
         draw_box((9, 11), (10, 11), "".to_string())?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
-        stdout.execute(SetAttribute(Attribute::Bold))?;
-        stdout.execute(SetAttribute(Attribute::Underlined))?;
+        stdout.queue(SetAttribute(Attribute::Bold))?;
+        stdout.queue(SetAttribute(Attribute::Underlined))?;
         stdout.queue(MoveTo(11, 12))?;
         stdout.queue(PrintStyledContent("INP".magenta()))?;
-        stdout.execute(SetAttribute(Attribute::Reset))?;
+        stdout.queue(SetAttribute(Attribute::Reset))?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
         for i in 0..8 {
             let bin = format!("{i:b}");
@@ -448,11 +453,11 @@ impl EmulatorState {
 
         draw_box((18, 11), (10, 11), "".to_string())?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
-        stdout.execute(SetAttribute(Attribute::Bold))?;
-        stdout.execute(SetAttribute(Attribute::Underlined))?;
+        stdout.queue(SetAttribute(Attribute::Bold))?;
+        stdout.queue(SetAttribute(Attribute::Underlined))?;
         stdout.queue(MoveTo(20, 12))?;
         stdout.queue(PrintStyledContent("OUT".magenta()))?;
-        stdout.execute(SetAttribute(Attribute::Reset))?;
+        stdout.queue(SetAttribute(Attribute::Reset))?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
         for i in 0..8 {
             let bin = format!("{i:b}");
@@ -462,11 +467,11 @@ impl EmulatorState {
 
         draw_box((27, 11), (13, 11), "".to_string())?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
-        stdout.execute(SetAttribute(Attribute::Bold))?;
-        stdout.execute(SetAttribute(Attribute::Underlined))?;
+        stdout.queue(SetAttribute(Attribute::Bold))?;
+        stdout.queue(SetAttribute(Attribute::Underlined))?;
         stdout.queue(MoveTo(29, 12))?;
         stdout.queue(PrintStyledContent("FLG".magenta()))?;
-        stdout.execute(SetAttribute(Attribute::Reset))?;
+        stdout.queue(SetAttribute(Attribute::Reset))?;
         stdout.queue(MoveTo(29, 13))?;
         stdout.queue(PrintStyledContent("ZE".cyan()))?;
         stdout.queue(MoveTo(29, 14))?;
@@ -561,8 +566,12 @@ impl EmulatorState {
         let instruction = format!("{bin:0>0$}", 16);
         let opcode = &instruction[0..4];
 
+        self.executed_instructions += 1;
+
         match opcode {
             "0000" => {
+                self.mode = Setup;
+                self.draw_mode()?;
                 self.pc += 1;
                 self.push_log("int".to_string())?;
             }
@@ -841,6 +850,8 @@ fn main() -> Result<()> {
         mode: Setup,
         log_buffer: Default::default(),
 
+        executed_instructions: 0,
+
         current_rom_read: None,
         current_ram_write: None,
         current_reg_write: None,
@@ -868,7 +879,7 @@ fn main() -> Result<()> {
                                 emulator.full_reset()?;
                             }
                             (KeyCode::Char('r'), KeyEventKind::Press) => {
-                                emulator.mode = Automatic(100);
+                                emulator.mode = Automatic(0);
                             }
                             (KeyCode::Char('s'), KeyEventKind::Press) => {
                                 emulator.mode = ManualStep;
@@ -921,6 +932,9 @@ fn main() -> Result<()> {
             }
         } else {
 
+        }
+        if let Automatic(speed) = emulator.mode {
+            emulator.cycle()?;
         }
     }
 }
