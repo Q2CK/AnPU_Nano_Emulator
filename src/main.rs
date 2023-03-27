@@ -1,15 +1,17 @@
-use std::{env, thread::sleep, time::{self, Duration}, io::{stdout, Write}, fs};
+use std::{time::Duration, io::{stdout, Write}, fs};
+use std::ffi::OsString;
 use std::path::Path;
+use std::thread::sleep;
+use std::time::Instant;
 
-use crossterm::{ExecutableCommand,
-                QueueableCommand,
+use crossterm::{QueueableCommand,
                 terminal::{self, SetSize, enable_raw_mode},
                 cursor::{self, MoveTo},
-                style::{self, Stylize, Color, PrintStyledContent, Attribute, Print, SetAttribute, SetAttributes, SetBackgroundColor, SetForegroundColor},
-                event::{read, poll, Event},
+                style::{Stylize, Color, PrintStyledContent, Attribute, Print, SetAttribute, SetBackgroundColor},
+                event::{read, poll, Event, KeyCode, KeyEventKind},
                 Result};
-use crossterm::event::{KeyCode, KeyEventKind};
-use crossterm::style::Attributes;
+use crossterm::style::Colored::BackgroundColor;
+
 use crate::Mode::{Automatic, ManualStep, Setup};
 
 const WINDOW_SIZE: (u16, u16) = (65, 24);
@@ -22,7 +24,7 @@ const FIELD_COLOR: Color = Color::Black;
 enum Mode {
     Setup,
     ManualStep,
-    Automatic(u16)
+    Automatic(u16),
 }
 
 struct EmulatorState {
@@ -67,29 +69,29 @@ impl EmulatorState {
         self.push_log(format!("Ex. instr: {}", self.executed_instructions))?;
         self.executed_instructions = 0;
 
-        self.reset_last_mods();
+        self.reset_last_mods()?;
         self.draw_contents()?;
 
         Ok(())
     }
 
-    fn reset_last_mods(&mut self){
+    fn reset_last_mods(&mut self) -> Result<()> {
         let mut stdout = stdout();
 
         if let Some(i) = self.current_rom_read {
             let i = i % 64;
             let value = self.rom[i as usize] % 65536;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo((5 * (i % 8) + 6) as u16, (i / 8 + 3) as u16)).unwrap();
-            stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 4).white())).unwrap();
+            stdout.queue(MoveTo((5 * (i % 8) + 6) as u16, (i / 8 + 3) as u16))?;
+            stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 4).white()))?;
         }
 
         if let Some(i) = self.current_ram_write {
             let i = i % 32;
             let value = self.ram[i as usize] % 256;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo((3 * (i % 4) + 52) as u16, (i / 4 + 3) as u16)).unwrap();
-            stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white())).unwrap();
+            stdout.queue(MoveTo((3 * (i % 4) + 52) as u16, (i / 4 + 3) as u16))?;
+            stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
         }
 
         if let Some(i) = self.current_reg_write {
@@ -97,12 +99,14 @@ impl EmulatorState {
             let val = self.reg[i as usize];
             let hex = &format!("{val:x}");
             stdout.queue(MoveTo(6, 13 + i)).unwrap();
-            stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white())).unwrap();
+            stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
         }
 
         self.current_rom_read = None;
         self.current_ram_write = None;
         self.current_reg_write = None;
+
+        Ok(())
     }
 
     fn draw_log(&mut self) -> Result<()> {
@@ -166,7 +170,10 @@ impl EmulatorState {
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
         }
         for idx in 0..16 {
-            stdout.queue(MoveTo(match idx { 0..=7 => 0, _ => 5 } + 32, idx % 8 + 13))?;
+            stdout.queue(MoveTo(match idx {
+                0..=7 => 0,
+                _ => 5
+            } + 32, idx % 8 + 13))?;
             let value = match self.flg[idx as usize] {
                 true => "T",
                 false => "F"
@@ -309,7 +316,7 @@ impl EmulatorState {
         match self.mode {
             Setup => stdout.queue(PrintStyledContent("HALTED".red()))?,
             ManualStep => stdout.queue(PrintStyledContent("MANUAL".yellow()))?,
-            Automatic(speed) => stdout.queue(PrintStyledContent("SWOOSH".green()))?// stdout.queue(PrintStyledContent(format!("{speed:->0$}", 6).green()))?
+            Automatic(_) => stdout.queue(PrintStyledContent("SWOOSH".green()))?// stdout.queue(PrintStyledContent(format!("{speed:->0$}", 6).green()))?
         };
 
         Ok(())
@@ -322,24 +329,24 @@ impl EmulatorState {
             Setup => {
                 stdout.queue(MoveTo(2, 22))?;
                 stdout.queue(PrintStyledContent("L".cyan()))?;
-                stdout.queue(PrintStyledContent(" - load program ".white()))?;
+                stdout.queue(PrintStyledContent(" - Load next program ".white()))?;
                 stdout.queue(PrintStyledContent("C".cyan()))?;
                 stdout.queue(PrintStyledContent(" - clear ".white()))?;
                 stdout.queue(PrintStyledContent("R".cyan()))?;
                 stdout.queue(PrintStyledContent(" - run ".white()))?;
                 stdout.queue(PrintStyledContent("S".cyan()))?;
-                stdout.queue(PrintStyledContent(" - step                   ".white()))?;
+                stdout.queue(PrintStyledContent(" - step              ".white()))?;
             }
             ManualStep | Automatic(_) => {
                 stdout.queue(MoveTo(2, 22))?;
                 stdout.queue(PrintStyledContent(" ".cyan()))?;
-                stdout.queue(PrintStyledContent("                ".white()))?;
+                stdout.queue(PrintStyledContent("                     ".white()))?;
                 stdout.queue(PrintStyledContent("C".cyan()))?;
                 stdout.queue(PrintStyledContent(" - clear ".white()))?;
                 stdout.queue(PrintStyledContent(" ".cyan()))?;
                 stdout.queue(PrintStyledContent("       ".white()))?;
                 stdout.queue(PrintStyledContent("S".cyan()))?;
-                stdout.queue(PrintStyledContent(" - step                   ".white()))?;
+                stdout.queue(PrintStyledContent(" - step             ".white()))?;
             }
         }
 
@@ -370,7 +377,7 @@ impl EmulatorState {
             let i = i % 32;
             let value = self.ram[i as usize] % 256;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo((3 * (i % 4) + 52) as u16, (i / 4 + 3) as u16)).unwrap();
+            stdout.queue(MoveTo(3 * (i % 4) + 52, (i / 4 + 3) as u16)).unwrap();
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white())).unwrap();
         }
 
@@ -386,7 +393,7 @@ impl EmulatorState {
         stdout.queue(SetBackgroundColor(Color::Magenta))?;
         stdout.queue(SetAttribute(Attribute::Bold))?;
         stdout.queue(SetAttribute(Attribute::Underlined))?;
-        stdout.queue(PrintStyledContent(" AnPU Nano emulator                                         Q2CK ".white()))?;
+        stdout.queue(PrintStyledContent(" AnPU Nano emulator                                              ".white()))?;
         stdout.queue(SetAttribute(Attribute::Reset))?;
 
 
@@ -559,6 +566,10 @@ impl EmulatorState {
         Ok(())
     }
 
+    /*fn alu_flags(&mut self, result: u16) {
+
+    }*/
+
     fn cycle(&mut self) -> Result<()> {
         self.draw_pc()?;
         let temp = self.read_from_rom(self.pc);
@@ -613,7 +624,7 @@ impl EmulatorState {
                 let src_a = usize::from_str_radix(&instruction[8..12], 2).unwrap();
                 let src_b = usize::from_str_radix(&instruction[12..16], 2).unwrap();
 
-                self.write_to_regs(dest % 8,!(self.reg[src_a % 8] | self.reg[src_b % 8]) % 256)?;
+                self.write_to_regs(dest % 8, !(self.reg[src_a % 8] | self.reg[src_b % 8]) % 256)?;
 
                 self.pc += 1;
 
@@ -694,7 +705,7 @@ impl EmulatorState {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
                 let ptr = usize::from_str_radix(&instruction[8..12], 2).unwrap();
 
-                self.write_to_regs(dest, self.ram[(self.reg[(ptr % 8) as usize] % 32) as usize])?;
+                self.write_to_regs(dest, self.ram[(self.reg[(ptr % 8)] % 32) as usize])?;
 
                 self.pc += 1;
 
@@ -744,7 +755,7 @@ impl EmulatorState {
             _ => {
                 self.pc += 1;
 
-                self.push_log(format!("unknown opcode"))?;
+                self.push_log("unknown opcode".to_string())?;
             }
         }
         self.draw_contents()?;
@@ -752,27 +763,28 @@ impl EmulatorState {
         Ok(())
     }
 
-    fn load_from_file(&mut self) -> Result<()> {
-        match fs::read_to_string(Path::new("rom.bin")) {
+    fn load_from_file(&mut self, rom_file_name: &str) -> Result<()> {
+        match fs::read_to_string(Path::new(rom_file_name)) {
             Ok(v) => {
                 let lines: Vec<String> = v.split('\n').map(|x| x.trim().to_string()).collect();
                 for (idx, line) in lines.iter().enumerate() {
                     if line.len() == 16 {
-                        match u32::from_str_radix(&line, 2) {
+                        match u32::from_str_radix(line, 2) {
                             Ok(p) => {
                                 self.write_to_rom(idx as u16, p)?;
                             }
                             Err(_) => {
-                                self.push_log(format!("Rom init. corrupted"))?;
+                                self.push_log("Rom init. corrupted".to_string())?;
                                 return Ok(());
                             }
                         }
                     }
                 }
-                self.push_log(format!("Loaded ROM preset"))?;
+                self.reset_last_mods()?;
+                self.push_log(format!("Loaded {}", rom_file_name))?;
             }
             Err(_) => {
-                self.push_log(format!("Program not found"))?;
+                self.push_log("Program not found".to_string())?;
             }
         }
         match fs::read_to_string(Path::new("ram.bin")) {
@@ -780,22 +792,21 @@ impl EmulatorState {
                 let lines: Vec<String> = v.split('\n').map(|x| x.trim().to_string()).collect();
                 for (idx, line) in lines.iter().enumerate() {
                     if line.len() == 8 {
-                        match u16::from_str_radix(&line, 2) {
+                        match u16::from_str_radix(line, 2) {
                             Ok(p) => {
                                 self.write_to_ram(idx as u16, p)?;
                             }
                             Err(_) => {
-                                self.push_log(format!("Ram init. corrupted"))?;
+                                self.push_log("Ram init. corrupted".to_string())?;
                                 return Ok(());
                             }
                         }
                     }
                 }
-                self.push_log(format!("Loaded RAM preset"))?;
+                self.reset_last_mods()?;
+                self.push_log("Loaded RAM preset".to_string())?;
             }
-            Err(_) => {
-
-            }
+            Err(_) => {}
         }
 
         Ok(())
@@ -811,15 +822,7 @@ fn draw_box((x_pos, y_pos): (u16, u16), (x_size, y_size): (u16, u16), title: Str
 
             stdout.queue(SetBackgroundColor(BG_COLOR))?;
 
-            if i == 0 && j == 0 { stdout.queue(PrintStyledContent("╔".white()))?; }
-            else if i == x_size - 1 && j == 0 { stdout.queue(PrintStyledContent("╗".white()))?; }
-            else if i == 0 && j == y_size - 1 { stdout.queue(PrintStyledContent("╚".white()))?; }
-            else if i == x_size - 1 && j == y_size - 1 { stdout.queue(PrintStyledContent("╝".white()))?; }
-
-            else if i == 0 || i == x_size - 1 { stdout.queue(PrintStyledContent("║".white()))?; }
-            else if j == 0 || j == y_size - 1 { stdout.queue(PrintStyledContent("═".white()))?; }
-
-            else if i != 0 && i != x_size && j != 0 && j != y_size - 1 {
+            if i == 0 && j == 0 { stdout.queue(PrintStyledContent("╔".white()))?; } else if i == x_size - 1 && j == 0 { stdout.queue(PrintStyledContent("╗".white()))?; } else if i == 0 && j == y_size - 1 { stdout.queue(PrintStyledContent("╚".white()))?; } else if i == x_size - 1 && j == y_size - 1 { stdout.queue(PrintStyledContent("╝".white()))?; } else if i == 0 || i == x_size - 1 { stdout.queue(PrintStyledContent("║".white()))?; } else if j == 0 || j == y_size - 1 { stdout.queue(PrintStyledContent("═".white()))?; } else if i != 0 && i != x_size && j != 0 && j != y_size - 1 {
                 stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
                 stdout.queue(PrintStyledContent(" ".white()))?;
             }
@@ -835,8 +838,6 @@ fn main() -> Result<()> {
     let mut stdout = stdout();
     enable_raw_mode()?;
 
-    let mut delay = Duration::from_millis(1000);
-
     let mut emulator: EmulatorState = EmulatorState {
         rom: [0; 64],
         ram: [0; 32],
@@ -844,7 +845,7 @@ fn main() -> Result<()> {
         inp: [0; 8],
         out: [0; 8],
         flg: [false, false, false, false, false, false, false, false,
-              false, false, false, false, false, false, false, true],
+            false, false, false, false, false, false, false, true],
         pc: 0,
 
         mode: Setup,
@@ -862,6 +863,11 @@ fn main() -> Result<()> {
     emulator.draw_layout()?;
     emulator.draw_contents()?;
 
+    let mut path_idx = 0;
+    let mut now = Instant::now();
+
+    let mut delay: u128 = 0;
+
     loop {
         if terminal::size()? != WINDOW_SIZE {
             stdout.queue(SetSize(WINDOW_SIZE.0, WINDOW_SIZE.1))?;
@@ -873,7 +879,23 @@ fn main() -> Result<()> {
                     Setup => {
                         match (key.code, key.kind) {
                             (KeyCode::Char('l'), KeyEventKind::Press) => {
-                                emulator.load_from_file()?;
+                                emulator.full_reset()?;
+
+                                let paths: Vec<OsString> = fs::read_dir("./")
+                                    .unwrap()
+                                    .map(|x| x.unwrap().file_name())
+                                    .filter(|x|
+                                        x.to_str().unwrap().ends_with(".bin")
+                                            && x.to_str().unwrap() != "ram.bin"
+                                    )
+                                    .collect();
+                                if path_idx < paths.len() {
+                                    emulator.load_from_file(paths[path_idx].to_str().unwrap())?;
+                                }
+                                path_idx += 1;
+                                if path_idx >= paths.len() {
+                                    path_idx = 0;
+                                }
                             }
                             (KeyCode::Char('c'), KeyEventKind::Press) => {
                                 emulator.full_reset()?;
@@ -884,9 +906,7 @@ fn main() -> Result<()> {
                             (KeyCode::Char('s'), KeyEventKind::Press) => {
                                 emulator.mode = ManualStep;
                             }
-                            _ => {
-
-                            }
+                            _ => {}
                         }
                     }
                     ManualStep => {
@@ -896,13 +916,22 @@ fn main() -> Result<()> {
                             }
                             (KeyCode::Char('s'), KeyEventKind::Press) => {
                                 emulator.cycle()?;
+                                let elapsed_time = now.elapsed().as_micros();
+                                let frequency: f64 = 1000000f64 / elapsed_time as f64;
+                                let freq_string = format!("{:.2}", frequency);
+                                stdout.queue(MoveTo(51, 0))?;
+                                stdout.queue(SetBackgroundColor(Color::Magenta))?;
+                                stdout.queue(SetAttribute(Attribute::Bold))?;
+                                stdout.queue(SetAttribute(Attribute::Underlined))?;
+                                stdout.queue(PrintStyledContent(format!("{: >10} Hz", freq_string).white()))?;
+                                stdout.queue(SetBackgroundColor(BG_COLOR))?;
+                                stdout.queue(SetAttribute(Attribute::Reset))?;
+                                now = Instant::now();
                             }
-                            _ => {
-
-                            }
+                            _ => {}
                         }
                     }
-                    Automatic(v) => {
+                    Automatic(_) => {
                         match (key.code, key.kind) {
                             (KeyCode::Char('c'), KeyEventKind::Press) => {
                                 emulator.program_reset()?;
@@ -910,17 +939,14 @@ fn main() -> Result<()> {
                             (KeyCode::Char('s'), KeyEventKind::Press) => {
                                 emulator.mode = ManualStep;
                             }
-                            _ => {
-
-                            }
+                            _ => {}
                         }
                     }
                 }
                 emulator.draw_mode()?;
                 emulator.draw_help()?;
                 stdout.flush()?;
-            }
-            else {
+            } else {
                 stdout.queue(terminal::Clear(terminal::ClearType::Purge))?;
                 stdout.queue(cursor::Hide)?;
                 emulator.draw_layout()?;
@@ -930,11 +956,24 @@ fn main() -> Result<()> {
             while poll(Duration::from_millis(0))? {
                 read()?;
             }
-        } else {
-
-        }
-        if let Automatic(speed) = emulator.mode {
+        } else {}
+        if let Automatic(_) = emulator.mode {
             emulator.cycle()?;
+            emulator.cycle()?;
+            delay += 1;
+            if delay % 10 == 0 {
+                let elapsed_time = now.elapsed().as_micros();
+                let frequency: f64 = 1000000f64 / elapsed_time as f64;
+                let freq_string = format!("{:.2}", frequency);
+                stdout.queue(MoveTo(51, 0))?;
+                stdout.queue(SetBackgroundColor(Color::Magenta))?;
+                stdout.queue(SetAttribute(Attribute::Bold))?;
+                stdout.queue(SetAttribute(Attribute::Underlined))?;
+                stdout.queue(PrintStyledContent(format!("{: >10} Hz", freq_string).white()))?;
+                stdout.queue(SetBackgroundColor(BG_COLOR))?;
+                stdout.queue(SetAttribute(Attribute::Reset))?;
+            }
+            now = Instant::now();
         }
     }
 }
