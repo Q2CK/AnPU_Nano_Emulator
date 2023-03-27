@@ -1,8 +1,8 @@
-use std::{time::Duration, io::{stdout, Write}, fs};
-use std::ffi::OsString;
-use std::path::Path;
-use std::thread::sleep;
-use std::time::Instant;
+use std::{time::{Duration, Instant},
+          io::{stdout, Write},
+          fs,
+          path::Path,
+          ffi::OsString};
 
 use crossterm::{QueueableCommand,
                 terminal::{self, SetSize, enable_raw_mode},
@@ -10,7 +10,6 @@ use crossterm::{QueueableCommand,
                 style::{Stylize, Color, PrintStyledContent, Attribute, Print, SetAttribute, SetBackgroundColor},
                 event::{read, poll, Event, KeyCode, KeyEventKind},
                 Result};
-use crossterm::style::Colored::BackgroundColor;
 
 use crate::Mode::{Automatic, ManualStep, Setup};
 
@@ -19,8 +18,6 @@ const WINDOW_SIZE: (u16, u16) = (65, 24);
 const BG_COLOR: Color = Color::Black;
 const FIELD_COLOR: Color = Color::Black;
 
-
-#[derive(Debug)]
 enum Mode {
     Setup,
     ManualStep,
@@ -130,6 +127,24 @@ impl EmulatorState {
         Ok(())
     }
 
+    fn draw_flags(&self) -> Result<()> {
+        let mut stdout = stdout();
+
+        for idx in 0..16 {
+            stdout.queue(MoveTo(match idx {
+                0..=7 => 0,
+                _ => 5
+            } + 32, idx % 8 + 13))?;
+            let value = match self.flg[idx as usize] {
+                true => "T",
+                false => "F"
+            };
+            stdout.queue(PrintStyledContent(value.white()))?;
+        }
+
+        Ok(())
+    }
+
     fn push_log(&mut self, new_entry: String) -> Result<()> {
         for i in 1..7 {
             self.log_buffer[i - 1] = self.log_buffer[i].clone();
@@ -169,17 +184,6 @@ impl EmulatorState {
             stdout.queue(MoveTo(24, 13 + idx))?;
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
         }
-        for idx in 0..16 {
-            stdout.queue(MoveTo(match idx {
-                0..=7 => 0,
-                _ => 5
-            } + 32, idx % 8 + 13))?;
-            let value = match self.flg[idx as usize] {
-                true => "T",
-                false => "F"
-            };
-            stdout.queue(PrintStyledContent(value.white()))?;
-        }
 
         if let Some(i) = self.current_rom_read {
             let i = i % 64;
@@ -206,6 +210,7 @@ impl EmulatorState {
         }
 
         self.draw_pc()?;
+        self.draw_flags()?;
 
         self.draw_log()?;
 
@@ -758,7 +763,8 @@ impl EmulatorState {
                 self.push_log("unknown opcode".to_string())?;
             }
         }
-        self.draw_contents()?;
+
+        self.draw_flags()?;
 
         Ok(())
     }
@@ -873,7 +879,7 @@ fn main() -> Result<()> {
             stdout.queue(SetSize(WINDOW_SIZE.0, WINDOW_SIZE.1))?;
         }
 
-        if poll(Duration::from_millis(0))? {
+        if poll(Duration::from_micros(0))? {
             if let Event::Key(key) = read()? {
                 match &emulator.mode {
                     Setup => {
@@ -917,6 +923,7 @@ fn main() -> Result<()> {
                             (KeyCode::Char('s'), KeyEventKind::Press) => {
                                 emulator.cycle()?;
                                 let elapsed_time = now.elapsed().as_micros();
+                                now = Instant::now();
                                 let frequency: f64 = 1000000f64 / elapsed_time as f64;
                                 let freq_string = format!("{:.2}", frequency);
                                 stdout.queue(MoveTo(51, 0))?;
@@ -926,7 +933,6 @@ fn main() -> Result<()> {
                                 stdout.queue(PrintStyledContent(format!("{: >10} Hz", freq_string).white()))?;
                                 stdout.queue(SetBackgroundColor(BG_COLOR))?;
                                 stdout.queue(SetAttribute(Attribute::Reset))?;
-                                now = Instant::now();
                             }
                             _ => {}
                         }
@@ -943,7 +949,6 @@ fn main() -> Result<()> {
                         }
                     }
                 }
-                emulator.draw_mode()?;
                 emulator.draw_help()?;
                 stdout.flush()?;
             } else {
@@ -956,13 +961,13 @@ fn main() -> Result<()> {
             while poll(Duration::from_millis(0))? {
                 read()?;
             }
-        } else {}
+        }
         if let Automatic(_) = emulator.mode {
             emulator.cycle()?;
-            emulator.cycle()?;
             delay += 1;
-            if delay % 10 == 0 {
-                let elapsed_time = now.elapsed().as_micros();
+            let elapsed_time = now.elapsed().as_micros();
+            now = Instant::now();
+            if delay % 100 == 0 {
                 let frequency: f64 = 1000000f64 / elapsed_time as f64;
                 let freq_string = format!("{:.2}", frequency);
                 stdout.queue(MoveTo(51, 0))?;
@@ -973,7 +978,7 @@ fn main() -> Result<()> {
                 stdout.queue(SetBackgroundColor(BG_COLOR))?;
                 stdout.queue(SetAttribute(Attribute::Reset))?;
             }
-            now = Instant::now();
+            stdout.flush()?;
         }
     }
 }
