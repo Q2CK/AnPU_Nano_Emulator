@@ -769,7 +769,7 @@ impl EmulatorState {
                         }
                     }
                 }
-                self.push_log(format!("Loaded 'rom.bin'"))?;
+                self.push_log(format!("Loaded ROM preset"))?;
             }
             Err(_) => {
                 self.push_log(format!("Program not found"))?;
@@ -791,7 +791,7 @@ impl EmulatorState {
                         }
                     }
                 }
-                self.push_log(format!("Loaded 'ram.bin'"))?;
+                self.push_log(format!("Loaded RAM preset"))?;
             }
             Err(_) => {
 
