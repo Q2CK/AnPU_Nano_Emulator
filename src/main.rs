@@ -419,7 +419,7 @@ impl EmulatorState {
             stdout.queue(PrintStyledContent(format!("{bin:0>0$}", 3).cyan()))?;
         }
 
-        draw_box((46, 1), (29, 11), "".to_string())?;
+        draw_box((46, 1), (19, 11), "".to_string())?;
         stdout.queue(SetBackgroundColor(FIELD_COLOR))?;
         stdout.queue(SetAttribute(Attribute::Bold))?;
         stdout.queue(SetAttribute(Attribute::Underlined))?;
