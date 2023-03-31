@@ -5,12 +5,11 @@ use std::{time::{Duration, Instant},
           ffi::OsString};
 
 use crossterm::{QueueableCommand,
-                terminal::{self, SetSize, enable_raw_mode},
+                terminal::{self, SetSize, enable_raw_mode, disable_raw_mode, Clear, ClearType},
                 cursor::{self, MoveTo},
                 style::{Stylize, Color, PrintStyledContent, Attribute, Print, SetAttribute, SetBackgroundColor},
                 event::{read, poll, Event, KeyCode, KeyEventKind},
                 Result};
-use crossterm::terminal::{Clear, ClearType, disable_raw_mode};
 
 use crate::Mode::{Automatic, ManualStep, Setup};
 
@@ -974,8 +973,10 @@ fn main() -> Result<()> {
                                 emulator.mode = ManualStep;
                             }
                             (KeyCode::Char('q'), KeyEventKind::Press) => {
-                                stdout.queue(Clear(ClearType::All))?;
                                 disable_raw_mode()?;
+                                stdout.queue(MoveTo(0,0))?;
+                                stdout.queue(Clear(ClearType::Purge))?;
+                                stdout.queue(Clear(ClearType::All))?;
                                 return Ok(())
                             }
                             _ => {}
