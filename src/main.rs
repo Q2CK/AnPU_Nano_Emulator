@@ -10,6 +10,7 @@ use crossterm::{QueueableCommand,
                 style::{Stylize, Color, PrintStyledContent, Attribute, Print, SetAttribute, SetBackgroundColor},
                 event::{read, poll, Event, KeyCode, KeyEventKind},
                 Result};
+use crossterm::terminal::{Clear, ClearType, disable_raw_mode};
 
 use crate::Mode::{Automatic, ManualStep, Setup};
 
@@ -973,6 +974,8 @@ fn main() -> Result<()> {
                                 emulator.mode = ManualStep;
                             }
                             (KeyCode::Char('q'), KeyEventKind::Press) => {
+                                stdout.queue(Clear(ClearType::All))?;
+                                disable_raw_mode()?;
                                 return Ok(())
                             }
                             _ => {}
