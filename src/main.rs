@@ -43,6 +43,7 @@ struct EmulatorState {
     current_reg_write: Option<u16>,
 }
 
+#[allow(arithmetic_overflow)]
 impl EmulatorState {
     fn full_reset(&mut self) -> Result<()> {
         self.rom = [0; 64];
@@ -596,6 +597,16 @@ impl EmulatorState {
                 let src_a = usize::from_str_radix(&instruction[8..12], 2).unwrap();
                 let src_b = usize::from_str_radix(&instruction[12..16], 2).unwrap();
 
+                self.flg[0] = (self.reg[src_a % 8] + self.reg[src_b % 8]) % 256 == 0;
+                self.flg[1] = (self.reg[src_a % 8] + self.reg[src_b % 8]) % 256 != 0;
+                self.flg[2] = (self.reg[src_a % 8] % 256) + (self.reg[src_b % 8] % 256) & 0x0100 != 0;
+                self.flg[3] = (self.reg[src_a % 8] % 256) + (self.reg[src_b % 8] % 256) & 0x0100 == 0;
+                self.flg[4] = ((self.reg[src_a % 8] % 128) + (self.reg[src_b % 8] % 128) & 0x0080 != 0)
+                            ^ self.flg[2];
+                self.flg[5] = !self.flg[4];
+                self.flg[6] = (self.reg[src_a % 8] + self.reg[src_b % 8]) % 2 == 0;
+                self.flg[7] = (self.reg[src_a % 8] + self.reg[src_b % 8]) % 2 != 0;
+
                 self.write_to_regs(dest % 8, (self.reg[src_a % 8] + self.reg[src_b % 8]) % 256)?;
 
                 self.pc += 1;
@@ -606,6 +617,16 @@ impl EmulatorState {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
                 let src_a = usize::from_str_radix(&instruction[8..12], 2).unwrap();
                 let src_b = usize::from_str_radix(&instruction[12..16], 2).unwrap();
+
+                self.flg[0] = (self.reg[src_a % 8] - self.reg[src_b % 8]) % 256 == 0;
+                self.flg[1] = (self.reg[src_a % 8] - self.reg[src_b % 8]) % 256 != 0;
+                self.flg[2] = (self.reg[src_a % 8] % 256) - (self.reg[src_b % 8] % 256) & 0x0100 != 0;
+                self.flg[3] = (self.reg[src_a % 8] % 256) - (self.reg[src_b % 8] % 256) & 0x0100 == 0;
+                self.flg[4] = ((self.reg[src_a % 8] % 128) - (self.reg[src_b % 8] % 128) & 0x0080 != 0)
+                            ^ self.flg[2];
+                self.flg[5] = !self.flg[4];
+                self.flg[6] = (self.reg[src_a % 8] - self.reg[src_b % 8]) % 2 == 0;
+                self.flg[7] = (self.reg[src_a % 8] - self.reg[src_b % 8]) % 2 != 0;
 
                 self.write_to_regs(dest % 8, (self.reg[src_a % 8] - self.reg[src_b % 8]) % 256)?;
 
@@ -618,6 +639,15 @@ impl EmulatorState {
                 let src_a = usize::from_str_radix(&instruction[8..12], 2).unwrap();
                 let src_b = usize::from_str_radix(&instruction[12..16], 2).unwrap();
 
+                self.flg[0] = (self.reg[src_a % 8] & self.reg[src_b % 8]) % 256 == 0;
+                self.flg[1] = (self.reg[src_a % 8] & self.reg[src_b % 8]) % 256 != 0;
+                self.flg[2] = false;
+                self.flg[3] = false;
+                self.flg[4] = false;
+                self.flg[5] = false;
+                self.flg[6] = (self.reg[src_a % 8] & self.reg[src_b % 8]) % 2 == 0;
+                self.flg[7] = (self.reg[src_a % 8] & self.reg[src_b % 8]) % 2 != 0;
+
                 self.write_to_regs(dest % 8, (self.reg[src_a % 8] & self.reg[src_b % 8]) % 256)?;
 
                 self.pc += 1;
@@ -628,6 +658,15 @@ impl EmulatorState {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
                 let src_a = usize::from_str_radix(&instruction[8..12], 2).unwrap();
                 let src_b = usize::from_str_radix(&instruction[12..16], 2).unwrap();
+
+                self.flg[0] = !(self.reg[src_a % 8] | self.reg[src_b % 8]) % 256 == 0;
+                self.flg[1] = !(self.reg[src_a % 8] | self.reg[src_b % 8]) % 256 != 0;
+                self.flg[2] = false;
+                self.flg[3] = false;
+                self.flg[4] = false;
+                self.flg[5] = false;
+                self.flg[6] = !(self.reg[src_a % 8] | self.reg[src_b % 8]) % 2 == 0;
+                self.flg[7] = !(self.reg[src_a % 8] | self.reg[src_b % 8]) % 2 != 0;
 
                 self.write_to_regs(dest % 8, !(self.reg[src_a % 8] | self.reg[src_b % 8]) % 256)?;
 
@@ -640,6 +679,15 @@ impl EmulatorState {
                 let src_a = usize::from_str_radix(&instruction[8..12], 2).unwrap();
                 let src_b = usize::from_str_radix(&instruction[12..16], 2).unwrap();
 
+                self.flg[0] = (self.reg[src_a % 8] ^ self.reg[src_b % 8]) % 256 == 0;
+                self.flg[1] = (self.reg[src_a % 8] ^ self.reg[src_b % 8]) % 256 != 0;
+                self.flg[2] = false;
+                self.flg[3] = false;
+                self.flg[4] = false;
+                self.flg[5] = false;
+                self.flg[6] = (self.reg[src_a % 8] ^ self.reg[src_b % 8]) % 2 == 0;
+                self.flg[7] = (self.reg[src_a % 8] ^ self.reg[src_b % 8]) % 2 != 0;
+
                 self.write_to_regs(dest % 8, (self.reg[src_a % 8] ^ self.reg[src_b % 8]) % 256)?;
 
                 self.pc += 1;
@@ -650,7 +698,16 @@ impl EmulatorState {
                 let dest = u16::from_str_radix(&instruction[4..8], 2).unwrap();
                 let src_a = usize::from_str_radix(&instruction[8..12], 2).unwrap();
 
-                self.write_to_regs(dest % 8, (self.reg[src_a % 8] / 2) % 256)?;
+                self.flg[0] = (self.reg[src_a % 8] >>1) % 256 == 0;
+                self.flg[1] = (self.reg[src_a % 8] >> 1) % 256 != 0;
+                self.flg[2] = false;
+                self.flg[3] = false;
+                self.flg[4] = false;
+                self.flg[5] = false;
+                self.flg[6] = (self.reg[src_a % 8] >> 1) % 2 == 0;
+                self.flg[7] = (self.reg[src_a % 8] >> 1) % 2 != 0;
+
+                self.write_to_regs(dest % 8, (self.reg[src_a % 8] >> 1) % 256)?;
 
                 self.pc += 1;
 
