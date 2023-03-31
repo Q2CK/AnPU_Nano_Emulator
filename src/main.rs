@@ -901,6 +901,8 @@ fn draw_box((x_pos, y_pos): (u16, u16), (x_size, y_size): (u16, u16), title: Str
 }
 
 fn main() -> Result<()> {
+    let size_restore: (u16, u16) = terminal::size()?;
+
     let mut stdout = stdout();
     enable_raw_mode()?;
 
@@ -974,6 +976,7 @@ fn main() -> Result<()> {
                             }
                             (KeyCode::Char('q'), KeyEventKind::Press) => {
                                 disable_raw_mode()?;
+                                stdout.queue(SetSize(size_restore.0, size_restore.1))?;
                                 stdout.queue(MoveTo(0,0))?;
                                 stdout.queue(Clear(ClearType::Purge))?;
                                 stdout.queue(Clear(ClearType::All))?;
