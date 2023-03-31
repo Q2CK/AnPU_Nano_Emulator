@@ -341,7 +341,9 @@ impl EmulatorState {
                 stdout.queue(PrintStyledContent("R".cyan()))?;
                 stdout.queue(PrintStyledContent(" - run ".white()))?;
                 stdout.queue(PrintStyledContent("S".cyan()))?;
-                stdout.queue(PrintStyledContent(" - step              ".white()))?;
+                stdout.queue(PrintStyledContent(" - step ".white()))?;
+                stdout.queue(PrintStyledContent("Q".cyan()))?;
+                stdout.queue(PrintStyledContent(" - quit     ".white()))?;
             }
             ManualStep | Automatic(_) => {
                 stdout.queue(MoveTo(2, 22))?;
@@ -352,7 +354,8 @@ impl EmulatorState {
                 stdout.queue(PrintStyledContent(" ".cyan()))?;
                 stdout.queue(PrintStyledContent("       ".white()))?;
                 stdout.queue(PrintStyledContent("S".cyan()))?;
-                stdout.queue(PrintStyledContent(" - step             ".white()))?;
+                stdout.queue(PrintStyledContent(" - step ".white()))?;
+                stdout.queue(PrintStyledContent("             ".white()))?;
             }
         }
 
@@ -968,6 +971,9 @@ fn main() -> Result<()> {
                             }
                             (KeyCode::Char('s'), KeyEventKind::Press) => {
                                 emulator.mode = ManualStep;
+                            }
+                            (KeyCode::Char('q'), KeyEventKind::Press) => {
+                                return Ok(())
                             }
                             _ => {}
                         }
