@@ -80,7 +80,7 @@ impl EmulatorState {
             let i = i % 64;
             let value = self.rom[i as usize] % 65536;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo((5 * (i % 8) + 6) as u16, (i / 8 + 3) as u16))?;
+            stdout.queue(MoveTo(5 * (i % 8) + 6, i / 8 + 3))?;
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 4).white()))?;
         }
 
@@ -88,7 +88,7 @@ impl EmulatorState {
             let i = i % 32;
             let value = self.ram[i as usize] % 256;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo((3 * (i % 4) + 52) as u16, (i / 4 + 3) as u16))?;
+            stdout.queue(MoveTo(3 * (i % 4) + 52, i / 4 + 3))?;
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
         }
 
@@ -190,7 +190,7 @@ impl EmulatorState {
             let i = i % 64;
             let value = self.rom[i as usize] % 65536;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo((5 * (i % 8) + 6) as u16, (i / 8 + 3) as u16))?;
+            stdout.queue(MoveTo(5 * (i % 8) + 6, i / 8 + 3))?;
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 4).green()))?;
         }
 
@@ -198,7 +198,7 @@ impl EmulatorState {
             let i = i % 32;
             let value = self.ram[i as usize] % 256;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo((3 * (i % 4) + 52) as u16, (i / 4 + 3) as u16))?;
+            stdout.queue(MoveTo(3 * (i % 4) + 52, i / 4 + 3))?;
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).green()))?;
         }
 
@@ -225,7 +225,7 @@ impl EmulatorState {
         self.rom[idx as usize] = val % 65536;
         let value = val % 65536;
         let hex = &format!("{value:x}");
-        stdout.queue(MoveTo((5 * (idx % 8) + 6) as u16, (idx / 8 + 3) as u16))?;
+        stdout.queue(MoveTo(5 * (idx % 8) + 6, idx / 8 + 3))?;
         stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 4).white()))?;
 
         Ok(())
@@ -238,18 +238,18 @@ impl EmulatorState {
             let i = i % 64;
             let value = self.rom[i as usize] % 65536;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo((5 * (i % 8) + 6) as u16, (i / 8 + 3) as u16)).unwrap();
+            stdout.queue(MoveTo(5 * (i % 8) + 6, i / 8 + 3)).unwrap();
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 4).white())).unwrap();
         }
 
         let idx = idx % 64;
         let val = self.rom[idx as usize] % 65536;
         let hex = &format!("{val:x}");
-        stdout.queue(MoveTo((5 * (idx % 8) + 6) as u16, (idx / 8 + 3) as u16)).unwrap();
+        stdout.queue(MoveTo(5 * (idx % 8) + 6, idx / 8 + 3)).unwrap();
         stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 4).green())).unwrap();
 
         self.current_rom_read = Some(idx);
-        return self.rom[idx as usize];
+        self.rom[idx as usize]
     }
 
     fn write_to_ram(&mut self, idx: u16, val: u16) -> Result<()> {
@@ -259,7 +259,7 @@ impl EmulatorState {
             let i = i % 32;
             let value = self.ram[i as usize] % 256;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo((3 * (i % 4) + 52) as u16, (i / 4 + 3) as u16))?;
+            stdout.queue(MoveTo(3 * (i % 4) + 52, i / 4 + 3))?;
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white()))?;
         }
 
@@ -267,7 +267,7 @@ impl EmulatorState {
         self.ram[idx as usize] = val % 256;
         let val = val % 256;
         let hex = &format!("{val:x}");
-        stdout.queue(MoveTo((3 * (idx % 4) + 52) as u16, (idx / 4 + 3) as u16))?;
+        stdout.queue(MoveTo(3 * (idx % 4) + 52, idx / 4 + 3))?;
         stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).green()))?;
 
         self.current_ram_write = Some(idx);
@@ -378,7 +378,7 @@ impl EmulatorState {
             let i = i % 64;
             let value = self.rom[i as usize] % 65536;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo((5 * (i % 8) + 6) as u16, (i / 8 + 3) as u16)).unwrap();
+            stdout.queue(MoveTo(5 * (i % 8) + 6, i / 8 + 3)).unwrap();
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 4).white())).unwrap();
         }
 
@@ -386,7 +386,7 @@ impl EmulatorState {
             let i = i % 32;
             let value = self.ram[i as usize] % 256;
             let hex = &format!("{value:x}");
-            stdout.queue(MoveTo(3 * (i % 4) + 52, (i / 4 + 3) as u16)).unwrap();
+            stdout.queue(MoveTo(3 * (i % 4) + 52, i / 4 + 3)).unwrap();
             stdout.queue(PrintStyledContent(format!("{hex:0>0$}", 2).white())).unwrap();
         }
 
@@ -602,9 +602,9 @@ impl EmulatorState {
 
                 self.flg[0] = (self.reg[src_a % 8] + self.reg[src_b % 8]) % 256 == 0;
                 self.flg[1] = (self.reg[src_a % 8] + self.reg[src_b % 8]) % 256 != 0;
-                self.flg[2] = (self.reg[src_a % 8] % 256) + (self.reg[src_b % 8] % 256) & 0x0100 != 0;
-                self.flg[3] = (self.reg[src_a % 8] % 256) + (self.reg[src_b % 8] % 256) & 0x0100 == 0;
-                self.flg[4] = ((self.reg[src_a % 8] % 128) + (self.reg[src_b % 8] % 128) & 0x0080 != 0)
+                self.flg[2] = ((self.reg[src_a % 8] % 256) + (self.reg[src_b % 8] % 256)) & 0x0100 != 0;
+                self.flg[3] = ((self.reg[src_a % 8] % 256) + (self.reg[src_b % 8] % 256)) & 0x0100 == 0;
+                self.flg[4] = (((self.reg[src_a % 8] % 128) + (self.reg[src_b % 8] % 128)) & 0x0080 != 0)
                             ^ self.flg[2];
                 self.flg[5] = !self.flg[4];
                 self.flg[6] = (self.reg[src_a % 8] + self.reg[src_b % 8]) % 2 == 0;
@@ -623,9 +623,9 @@ impl EmulatorState {
 
                 self.flg[0] = (self.reg[src_a % 8] - self.reg[src_b % 8]) % 256 == 0;
                 self.flg[1] = (self.reg[src_a % 8] - self.reg[src_b % 8]) % 256 != 0;
-                self.flg[2] = (self.reg[src_a % 8] % 256) - (self.reg[src_b % 8] % 256) & 0x0100 != 0;
-                self.flg[3] = (self.reg[src_a % 8] % 256) - (self.reg[src_b % 8] % 256) & 0x0100 == 0;
-                self.flg[4] = ((self.reg[src_a % 8] % 128) - (self.reg[src_b % 8] % 128) & 0x0080 != 0)
+                self.flg[2] = ((self.reg[src_a % 8] % 256) - (self.reg[src_b % 8] % 256)) & 0x0100 != 0;
+                self.flg[3] = ((self.reg[src_a % 8] % 256) - (self.reg[src_b % 8] % 256)) & 0x0100 == 0;
+                self.flg[4] = (((self.reg[src_a % 8] % 128) - (self.reg[src_b % 8] % 128)) & 0x0080 != 0)
                             ^ self.flg[2];
                 self.flg[5] = !self.flg[4];
                 self.flg[6] = (self.reg[src_a % 8] - self.reg[src_b % 8]) % 2 == 0;
